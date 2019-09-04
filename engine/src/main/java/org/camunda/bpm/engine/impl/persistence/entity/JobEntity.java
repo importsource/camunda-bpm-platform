@@ -102,6 +102,9 @@ public abstract class JobEntity extends AcquirableJobEntity implements Serializa
   // sequence counter //////////////////////////
   protected long sequenceCounter = 1;
 
+  // last failure log id ///////////////////////
+  protected String lastFailureLogId;
+
   public void execute(CommandContext commandContext) {
     if (executionId != null) {
       ExecutionEntity execution = getExecution();
@@ -313,6 +316,17 @@ public abstract class JobEntity extends AcquirableJobEntity implements Serializa
             .findIncidentByConfigurationAndIncidentType(id, incidentHandlerType);
 
         if (!failedJobIncidents.isEmpty()) {
+          // update the historic job log id in the historic incidents (if available)
+          for (Incident incident : failedJobIncidents) {
+            HistoricIncidentEntity historicIncidentEvent = Context
+                .getCommandContext()
+                .getHistoricIncidentManager()
+                .findHistoricIncidentById(incident.getId());
+            if (historicIncidentEvent != null) {
+              historicIncidentEvent.setHistoryConfiguration(getLastFailureLogId());
+              Context.getCommandContext().getDbEntityManager().merge(historicIncidentEvent);
+            }
+          }
           return;
         }
 
@@ -320,6 +334,7 @@ public abstract class JobEntity extends AcquirableJobEntity implements Serializa
 
       IncidentContext incidentContext = createIncidentContext();
       incidentContext.setActivityId(getActivityId());
+      incidentContext.setHistoryConfiguration(getLastFailureLogId());
 
       processEngineConfiguration
         .getIncidentHandler(incidentHandlerType)
@@ -608,6 +623,14 @@ public abstract class JobEntity extends AcquirableJobEntity implements Serializa
     }
 
     return referenceIdAndClass;
+  }
+
+  public String getLastFailureLogId() {
+    return lastFailureLogId;
+  }
+
+  public void setLastFailureLogId(String lastFailureLogId) {
+    this.lastFailureLogId = lastFailureLogId;
   }
 
   @Override

@@ -89,6 +89,8 @@ public class ExternalTaskEntity implements ExternalTask, DbEntity, HasDbRevision
 
   protected String businessKey;
 
+  protected String lastFailureLogId;
+
   @Override
   public String getId() {
     return id;
@@ -374,8 +376,8 @@ public class ExternalTaskEntity implements ExternalTask, DbEntity, HasDbRevision
       setErrorDetails(errorDetails);
     }
     this.lockExpirationTime = new Date(ClockUtil.getCurrentTime().getTime() + retryDuration);
-    setRetriesAndManageIncidents(retries);
     produceHistoricExternalTaskFailedEvent();
+    setRetriesAndManageIncidents(retries);
   }
 
   public void bpmnError(String errorCode, String errorMessage, Map<String, Object> variables) {
@@ -415,7 +417,9 @@ public class ExternalTaskEntity implements ExternalTask, DbEntity, HasDbRevision
         .getProcessEngineConfiguration()
         .getIncidentHandler(Incident.EXTERNAL_TASK_HANDLER_TYPE);
 
-    incidentHandler.handleIncident(createIncidentContext(), errorMessage);
+    IncidentContext incidentContext = createIncidentContext();
+    incidentContext.setHistoryConfiguration(getLastFailureLogId());
+    incidentHandler.handleIncident(incidentContext, errorMessage);
   }
 
   protected void removeIncident() {
@@ -555,5 +559,11 @@ public class ExternalTaskEntity implements ExternalTask, DbEntity, HasDbRevision
     }
 
     return referenceIdAndClass;
+  }
+  public String getLastFailureLogId() {
+    return lastFailureLogId;
+  }
+  public void setLastFailureLogId(String lastFailureLogId) {
+    this.lastFailureLogId = lastFailureLogId;
   }
 }

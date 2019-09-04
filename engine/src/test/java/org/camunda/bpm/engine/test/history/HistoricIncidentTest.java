@@ -16,11 +16,14 @@
  */
 package org.camunda.bpm.engine.test.history;
 
+import static org.junit.Assert.assertNotEquals;
+
 import java.util.List;
 
 import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.history.HistoricIncident;
 import org.camunda.bpm.engine.history.HistoricIncidentQuery;
+import org.camunda.bpm.engine.history.HistoricJobLog;
 import org.camunda.bpm.engine.impl.test.PluggableProcessEngineTestCase;
 import org.camunda.bpm.engine.management.JobDefinition;
 import org.camunda.bpm.engine.runtime.Execution;
@@ -49,6 +52,9 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     HistoricIncident historicIncident = historyService.createHistoricIncidentQuery().singleResult();
     assertNotNull(historicIncident);
 
+    // the last failure log entry correlates to the historic incident
+    HistoricJobLog jobLog = getHistoricJobLogOrdered(incident.getConfiguration()).get(0);
+
     assertEquals(incident.getId(), historicIncident.getId());
     assertEquals(incident.getIncidentTimestamp(), historicIncident.getCreateTime());
     assertNull(historicIncident.getEndTime());
@@ -63,6 +69,7 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     assertEquals(incident.getRootCauseIncidentId(), historicIncident.getRootCauseIncidentId());
     assertEquals(incident.getConfiguration(), historicIncident.getConfiguration());
     assertEquals(incident.getJobDefinitionId(), historicIncident.getJobDefinitionId());
+    assertEquals(jobLog.getId(), historicIncident.getHistoryConfiguration());
 
     assertTrue(historicIncident.isOpen());
     assertFalse(historicIncident.isDeleted());
@@ -87,6 +94,28 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     query = historyService.createHistoricIncidentQuery();
     // a new historic incident exists which is open
     assertEquals(1, query.open().count());
+  }
+
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/oneFailingServiceProcess.bpmn20.xml"})
+  public void testJobLogReferenceWithMultipleHistoricIncidents() {
+    startProcessInstance(PROCESS_DEFINITION_KEY);
+
+    String jobId = managementService.createJobQuery().singleResult().getId();
+    managementService.setJobRetries(jobId, 1);
+
+    executeAvailableJobs();
+
+    HistoricIncidentQuery query = historyService.createHistoricIncidentQuery();
+    assertEquals(2, query.count());
+
+    List<HistoricJobLog> logs = getHistoricJobLogOrdered(jobId);
+
+    // the first historic incident references the previous-to-last job log
+    assertEquals(logs.get(1).getId(), query.resolved().singleResult().getHistoryConfiguration());
+
+    query = historyService.createHistoricIncidentQuery();
+    // the new historic incident references the latest job log
+    assertEquals(logs.get(0).getId(), query.open().singleResult().getHistoryConfiguration());
   }
 
 
@@ -177,8 +206,11 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     HistoricIncident historicIncident = historyService.createHistoricIncidentQuery().singleResult();
     assertNotNull(historicIncident);
 
+    HistoricJobLog jobLog = getHistoricJobLogOrdered(historicIncident.getConfiguration()).get(0);
+
     assertEquals(execution.getId(), historicIncident.getExecutionId());
     assertEquals("serviceTask", historicIncident.getActivityId());
+    assertEquals(jobLog.getId(), historicIncident.getHistoryConfiguration());
   }
 
   @Deployment(resources={"org/camunda/bpm/engine/test/history/HistoricIncidentQueryTest.testQueryByCauseIncidentId.bpmn20.xml",
@@ -211,6 +243,34 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     // cause and root cause id is equal to the id of the root incident
     assertEquals(rootCauseHistoricIncident.getId(), historicIncident.getCauseIncidentId());
     assertEquals(rootCauseHistoricIncident.getId(), historicIncident.getRootCauseIncidentId());
+  }
+
+  @Deployment(resources={"org/camunda/bpm/engine/test/history/HistoricIncidentQueryTest.testQueryByCauseIncidentId.bpmn20.xml",
+  "org/camunda/bpm/engine/test/api/runtime/oneFailingServiceProcess.bpmn20.xml"})
+  public void testJobLogReferenceForRecursiveHistoricIncident() {
+    startProcessInstance("process");
+
+    ProcessInstance pi1 = runtimeService.createProcessInstanceQuery()
+        .processDefinitionKey("process")
+        .singleResult();
+    ProcessInstance pi2 = runtimeService.createProcessInstanceQuery()
+        .processDefinitionKey(PROCESS_DEFINITION_KEY)
+        .singleResult();
+
+    HistoricIncident rootCauseHistoricIncident = historyService.createHistoricIncidentQuery()
+        .processInstanceId(pi2.getId())
+        .singleResult();
+    HistoricIncident historicIncident = historyService.createHistoricIncidentQuery()
+        .processInstanceId(pi1.getId())
+        .singleResult();
+
+    List<HistoricJobLog> logs = getHistoricJobLogOrdered(rootCauseHistoricIncident.getConfiguration());
+
+    // the root incident is referencing the latest failure job log
+    assertEquals(logs.get(0).getId(), rootCauseHistoricIncident.getHistoryConfiguration());
+
+    // the parent incident links to no job log
+    assertNull(historicIncident.getHistoryConfiguration());
   }
 
   @Deployment(resources={"org/camunda/bpm/engine/test/history/HistoricIncidentTest.testCreateRecursiveHistoricIncidentsForNestedCallActivities.bpmn20.xml",
@@ -292,6 +352,46 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
   }
 
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/oneFailingServiceProcess.bpmn20.xml"})
+  public void testJobLogReferenceWithNoNewIncidentCreatedOnFailure() {
+    startProcessInstance(PROCESS_DEFINITION_KEY);
+    ProcessInstance pi = runtimeService.createProcessInstanceQuery().singleResult();
+    JobDefinition jobDefinition = managementService.createJobDefinitionQuery().singleResult();
+
+    HistoricIncidentQuery query = historyService.createHistoricIncidentQuery().processInstanceId(pi.getId());
+    HistoricIncident incident = query.singleResult();
+
+    String jobId = incident.getConfiguration();
+    List<HistoricJobLog> logs = getHistoricJobLogOrdered(jobId);
+    assertEquals(logs.get(0).getId(), incident.getHistoryConfiguration());
+
+    // set retries to 2 by job definition id
+    managementService.setJobRetriesByJobDefinitionId(jobDefinition.getId(), 2);
+
+    // execute the available job (should fail again)
+    executeAvailableJobs(false);
+
+    // the incident still exists, there is no new incident, the incident still references the old log entry
+    assertEquals(1, query.count());
+    HistoricIncident incidentNew = query.singleResult();
+    List<HistoricJobLog> logsNew = getHistoricJobLogOrdered(jobId);
+    assertEquals(incident.getId(), incidentNew.getId());
+    assertEquals(incident.getHistoryConfiguration(), incidentNew.getHistoryConfiguration());
+    assertTrue(logsNew.size() > logs.size());
+
+    // execute the available job (should fail again)
+    executeAvailableJobs(false);
+
+    // the incident still exists, there is no new incident, the incident references the new latest log entry
+    assertEquals(1, query.count());
+    incidentNew = query.singleResult();
+    logsNew = getHistoricJobLogOrdered(jobId);
+    assertTrue(logsNew.size() > logs.size());
+    assertEquals(incident.getId(), incidentNew.getId());
+    assertNotEquals(incident.getHistoryConfiguration(), incidentNew.getHistoryConfiguration());
+    assertEquals(logsNew.get(0).getId(), incidentNew.getHistoryConfiguration());
+  }
+
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/oneFailingServiceProcess.bpmn20.xml"})
   public void testSetRetriesByJobDefinitionIdResolveIncident() {
     startProcessInstance(PROCESS_DEFINITION_KEY);
 
@@ -314,11 +414,10 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     assertNull(tmp.getEndTime());
     assertTrue(tmp.isOpen());
 
-    // execute the available job (should fail again)
+    // execute the available job (should succeed)
     executeAvailableJobs();
 
-    // the incident still exists and there
-    // should be not a new incident
+    // the incident still exists and is resolved
     assertEquals(1, query.count());
     tmp = query.singleResult();
     assertEquals(incident.getId(), tmp.getId());
@@ -338,6 +437,14 @@ public class HistoricIncidentTest extends PluggableProcessEngineTestCase {
     }
 
     executeAvailableJobs();
+  }
+
+  protected List<HistoricJobLog> getHistoricJobLogOrdered(String jobId) {
+    return historyService.createHistoricJobLogQuery()
+        .failureLog()
+        .jobId(jobId)
+        .orderPartiallyByOccurrence().desc()
+        .list();
   }
 
 }

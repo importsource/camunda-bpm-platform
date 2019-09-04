@@ -146,4 +146,8 @@ public interface HistoricIncident {
   /** The time the historic incident will be removed. */
   Date getRemovalTime();
 
+  /**
+   * Returns the history payload of this incident.
+   */
+  String getHistoryConfiguration();
 }
