@@ -65,6 +65,8 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
 
   protected Set<Validator<AbstractQuery<?, ?>>> validators = new HashSet<Validator<AbstractQuery<?, ?>>>();
 
+  protected boolean hasCommandContext;
+
   protected AbstractQuery() {
   }
 
@@ -129,19 +131,13 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
   @SuppressWarnings("unchecked")
   public U singleResult() {
     this.resultType = ResultType.SINGLE_RESULT;
-    if (commandExecutor!=null) {
-      return (U) commandExecutor.execute(this);
-    }
-    return executeSingleResult(Context.getCommandContext());
+    return (U) executeList(true);
   }
 
   @SuppressWarnings("unchecked")
   public List<U> list() {
     this.resultType = ResultType.LIST;
-    if (commandExecutor!=null) {
-      return (List<U>) commandExecutor.execute(this);
-    }
-    return evaluateExpressionsAndExecuteList(Context.getCommandContext(), null);
+    return (List<U>) executeList(false);
   }
 
   @SuppressWarnings("unchecked")
@@ -149,10 +145,24 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
     this.firstResult = firstResult;
     this.maxResults = maxResults;
     this.resultType = ResultType.LIST_PAGE;
-    if (commandExecutor!=null) {
-      return (List<U>) commandExecutor.execute(this);
+    return (List<U>) executeList(false);
+  }
+
+  public Object executeList(boolean isSingleResult) {
+
+    if (commandExecutor != null) {
+      hasCommandContext = Context.getCommandContext() != null;
+
+      return commandExecutor.execute(this);
     }
-    return evaluateExpressionsAndExecuteList(Context.getCommandContext(), new Page(firstResult, maxResults));
+
+    if (isSingleResult) {
+      return executeSingleResult(Context.getCommandContext());
+
+    } else {
+      return evaluateExpressionsAndExecuteList(Context.getCommandContext(), null, true);
+
+    }
   }
 
   public long count() {
@@ -165,11 +175,11 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
 
   public Object execute(CommandContext commandContext) {
     if (resultType==ResultType.LIST) {
-      return evaluateExpressionsAndExecuteList(commandContext, null);
+      return evaluateExpressionsAndExecuteList(commandContext, null, hasCommandContext);
     } else if (resultType==ResultType.SINGLE_RESULT) {
       return executeSingleResult(commandContext);
     } else if (resultType==ResultType.LIST_PAGE) {
-      return evaluateExpressionsAndExecuteList(commandContext, null);
+      return evaluateExpressionsAndExecuteList(commandContext, null, hasCommandContext);
     } else if (resultType == ResultType.LIST_IDS) {
       return evaluateExpressionsAndExecuteIdsList(commandContext);
     } else {
@@ -185,7 +195,11 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
 
   public abstract long executeCount(CommandContext commandContext);
 
-  public List<U> evaluateExpressionsAndExecuteList(CommandContext commandContext, Page page) {
+  public List<U> evaluateExpressionsAndExecuteList(CommandContext commandContext, Page page, boolean enableUnboundMaxResults) {
+    if (!enableUnboundMaxResults) {
+      checkMaxResultsLimit();
+    }
+
     validate();
     evaluateExpressions();
     return !hasExcludingConditions() ? executeList(commandContext, page) : new ArrayList<U>();
@@ -209,7 +223,7 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
   public abstract List<U> executeList(CommandContext commandContext, Page page);
 
   public U executeSingleResult(CommandContext commandContext) {
-    List<U> results = evaluateExpressionsAndExecuteList(commandContext, null);
+    List<U> results = evaluateExpressionsAndExecuteList(commandContext, new Page(0, 2), true);
     if (results.size() == 1) {
       return results.get(0);
     } else if (results.size() > 1) {
@@ -337,6 +351,33 @@ public abstract class AbstractQuery<T extends Query<?,?>, U> extends ListQueryPa
 
   public List<String> executeIdsList(CommandContext commandContext) {
     throw new UnsupportedOperationException();
+  }
+
+  protected void checkMaxResultsLimit() {
+    if (isUserAuthenticated() && getMaxResultsLimit() < Integer.MAX_VALUE) {
+      if (maxResults == Integer.MAX_VALUE) {
+        throw new ProcessEngineException("An unbound number of results is forbidden!");
+
+      } else if (maxResults > getMaxResultsLimit()) {
+        throw new ProcessEngineException("Max results limit of " + getMaxResultsLimit() + " exceeded!");
+
+      }
+    }
+  }
+
+  protected boolean isUserAuthenticated() {
+    String userId = getAuthenticatedUserId();
+    return userId != null && !userId.isEmpty();
+  }
+
+  protected String getAuthenticatedUserId() {
+    return Context.getCommandContext()
+        .getAuthenticatedUserId();
+  }
+
+  protected int getMaxResultsLimit() {
+    return Context.getProcessEngineConfiguration().
+        getMaxResultsLimit();
   }
 
 }

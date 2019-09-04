@@ -126,7 +126,7 @@ public class DefaultCorrelationHandler implements CorrelationHandler {
     // restrict to active executions
     query.active();
 
-    List<Execution> matchingExecutions = query.evaluateExpressionsAndExecuteList(commandContext, null);
+    List<Execution> matchingExecutions = query.evaluateExpressionsAndExecuteList(commandContext, null, true);
 
     List<CorrelationHandlerResult> result = new ArrayList<CorrelationHandlerResult>(matchingExecutions.size());
 
