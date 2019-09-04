@@ -18,6 +18,7 @@ package org.camunda.bpm.engine.test.api.queries;
 
 import org.camunda.bpm.engine.HistoryService;
 import org.camunda.bpm.engine.IdentityService;
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.TaskService;
@@ -27,6 +28,7 @@ import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.runtime.ProcessInstanceQuery;
 import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.test.ProcessEngineRule;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.test.util.ProcessEngineTestRule;
 import org.camunda.bpm.engine.test.util.ProvidedProcessEngineRule;
 import org.camunda.bpm.model.bpmn.Bpmn;
@@ -117,6 +119,7 @@ public class BoundedNumberOfMaxResultsTest {
     assertThat(processInstances.size()).isEqualTo(0);
   }
 
+  @RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_FULL)
   @Test
   public void shouldReturnUnboundedResults_InsideCmd() {
     // given
@@ -203,6 +206,7 @@ public class BoundedNumberOfMaxResultsTest {
     processInstanceQuery.list();
   }
 
+  @RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_ACTIVITY)
   @Test
   public void shouldThrowException_UnboundedResultsForIdList() {
     // given
@@ -233,6 +237,7 @@ public class BoundedNumberOfMaxResultsTest {
     processInstanceQuery.listPage(0, 20);
   }
 
+  @RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_ACTIVITY)
   @Test
   public void shouldReturnSingleResult_BoundedMaxResults() {
     // given
