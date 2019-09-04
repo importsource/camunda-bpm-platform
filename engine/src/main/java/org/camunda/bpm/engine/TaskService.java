@@ -1151,7 +1151,7 @@ public interface TaskService {
   /** Instantiate a task report */
   TaskReport createTaskReport();
 
-  /** Signals that an business error appears, which should be handled by the process engine.
+  /** Signals that a business error appears, which should be handled by the process engine.
    *
    * @param taskId the id of an existing active task
    * @param errorCode the error code of the corresponding bmpn error
@@ -1160,7 +1160,7 @@ public interface TaskService {
    */
   void handleBpmnError(String taskId, String errorCode);
 
-  /** Signals that an business error appears, which should be handled by the process engine.
+  /** Signals that a business error appears, which should be handled by the process engine.
    *
    * @param taskId the id of an existing active task
    * @param errorCode the error code of the corresponding bmpn error
@@ -1170,7 +1170,7 @@ public interface TaskService {
    */
   void handleBpmnError(String taskId, String errorCode, String errorMessage);
 
-  /** Signals that an business error appears, which should be handled by the process engine.
+  /** Signals that a business error appears, which should be handled by the process engine.
    *
    * @param taskId the id of an existing active task
    * @param errorCode the error code of the corresponding bmpn error
@@ -1180,4 +1180,24 @@ public interface TaskService {
    * @throws NullValueException if no task with the given id exists
    */
   void handleBpmnError(String taskId, String errorCode, String errorMessage, Map<String, Object> variables);
+
+  /** Signals that an escalation appears, which should be handled by the process engine.
+  *
+  * @param taskId the id of an existing active task
+  * @param escalationCode the escalation code of the corresponding escalation
+  * @param variables the variables to pass to the execution
+  *
+  * @throws NullValueException if no task with the given id exists
+  */
+  void handleEscalation(String taskId, String escalationCode);
+
+  /** Signals that an escalation appears, which should be handled by the process engine.
+  *
+  * @param taskId the id of an existing active task
+  * @param escalationCode the escalation code of the corresponding escalation
+  * @param variables the variables to pass to the execution
+  *
+  * @throws NullValueException if no task with the given id exists
+  */
+  void handleEscalation(String taskId, String escalationCode, Map<String, Object> variables);
 }

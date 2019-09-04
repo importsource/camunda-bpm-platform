@@ -28,6 +28,8 @@ import org.camunda.bpm.engine.exception.NullValueException;
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.bpmn.helper.BpmnExceptionHandler;
 import org.camunda.bpm.engine.impl.bpmn.helper.ErrorPropagationException;
+import org.camunda.bpm.engine.impl.bpmn.helper.EscalationHandler;
+import org.camunda.bpm.engine.impl.bpmn.parser.Escalation;
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.cfg.auth.ResourceAuthorizationProvider;
 import org.camunda.bpm.engine.impl.cmmn.entity.repository.CaseDefinitionEntity;
@@ -1586,4 +1588,18 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
     }
   }
 
+  public void escalation(String escalationCode, Map<String, Object> variables) {
+    ensureTaskActive();
+    ActivityExecution activityExecution = getExecution();
+    Escalation escalation = new Escalation(escalationCode);
+
+    try {
+      if (variables != null && !variables.isEmpty()) {
+        activityExecution.setVariables(variables);
+      }
+      EscalationHandler.propagateEscalation(activityExecution, escalation);
+    } catch (Exception ex) {
+      throw ProcessEngineLogger.CMD_LOGGER.exceptionEscalationPropagationFailed(escalationCode, ex);
+    }
+  }
 }

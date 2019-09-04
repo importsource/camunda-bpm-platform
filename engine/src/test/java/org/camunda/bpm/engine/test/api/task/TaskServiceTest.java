@@ -102,6 +102,7 @@ public class TaskServiceTest {
 
   protected static final String USER_TASK_THROW_ERROR = "throw-error";
   protected static final String ERROR_CODE = "300";
+  protected static final String ESCALATION_CODE = "432";
   protected static final String PROCESS_KEY = "process";
   protected static final String USER_TASK_AFTER_CATCH = "after-catch";
 
@@ -2558,7 +2559,6 @@ public class TaskServiceTest {
     assertEquals(variableValue, variablePassedDuringThrowError.getValue());
   }
 
-
   @Test
   public void testThrowBpmnErrorCatchInEventSubprocess() {
     // given
@@ -2585,6 +2585,58 @@ public class TaskServiceTest {
     assertEquals(errorMessageValue, errorMessageVariable.getValue());
     VariableInstance errorCodeVariable = runtimeService.createVariableInstanceQuery().variableName(errorCodeVariableName).singleResult();
     assertEquals(ERROR_CODE, errorCodeVariable.getValue());
+  }
+
+  @Test
+  public void testHandleEscalationWithNonexistingTask() {
+    // given
+    // non-existing task
+
+    // then
+    thrown.expect(NullValueException.class);
+    thrown.expectMessage("Cannot find task with id non-existing: task is null");
+
+    // when
+    taskService.handleEscalation("non-existing", ESCALATION_CODE);
+  }
+
+  @Test
+  public void testThrowEscalationWithoutCatch() {
+    // given
+    BpmnModelInstance model =Bpmn.createExecutableProcess(PROCESS_KEY)
+        .startEvent()
+        .userTask("throw-escalation")
+        .userTask("skipped-error")
+        .endEvent()
+        .done();
+    testRule.deploy(model);
+    ProcessInstance processInstance = runtimeService.startProcessInstanceByKey(PROCESS_KEY);
+    Task task = taskService.createTaskQuery().processInstanceId(processInstance.getId()).singleResult();
+    assertEquals("throw-escalation", task.getTaskDefinitionKey());
+
+    // when
+    taskService.handleEscalation(task.getId(), ESCALATION_CODE);
+
+    // then
+    List<ProcessInstance> processInstances = runtimeService.createProcessInstanceQuery().processInstanceId(processInstance.getId()).list();
+    assertEquals(0, processInstances.size());
+  }
+
+  @Test
+  public void testHandleEscalation() {
+    // given
+    BpmnModelInstance model = createUserTaskProcessWithEscalateCatchBoundaryEvent();
+    testRule.deploy(model);
+    ProcessInstance processInstance = runtimeService.startProcessInstanceByKey(PROCESS_KEY);
+    Task task = taskService.createTaskQuery().processInstanceId(processInstance.getId()).singleResult();
+    assertEquals("throw-escalation", task.getTaskDefinitionKey());
+
+    // when
+    taskService.handleEscalation(task.getId(), ESCALATION_CODE);
+
+    // then
+    Task taskAfterThrow = taskService.createTaskQuery().processInstanceId(processInstance.getId()).singleResult();
+    assertEquals(USER_TASK_AFTER_CATCH, taskAfterThrow.getTaskDefinitionKey());
   }
 
   protected BpmnModelInstance createUserTaskProcessWithCatchBoundaryEvent() {
@@ -2626,4 +2678,17 @@ public class TaskServiceTest {
     return model;
   }
 
+  protected BpmnModelInstance createUserTaskProcessWithEscalateCatchBoundaryEvent() {
+    return Bpmn.createExecutableProcess(PROCESS_KEY)
+        .startEvent()
+        .userTask("throw-escalation")
+          .boundaryEvent("catch-escalation")
+            .escalation("escalation-432")
+          .userTask(USER_TASK_AFTER_CATCH)
+          .endEvent()
+        .moveToActivity("throw-escalation")
+        .userTask("after-throw")
+        .endEvent()
+        .done();
+  }
 }
