@@ -1,4 +1,4 @@
-camunda BPM - The open source BPM platform
+camunda BPM - 开源的BPM平台
 ==========================================
 
 [![Build Status](https://travis-ci.org/camunda/camunda-bpm-platform.svg?branch=master)](https://travis-ci.org/camunda/camunda-bpm-platform)
